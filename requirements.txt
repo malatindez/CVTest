@@ -1,0 +1,8 @@
+PyOpenGL
+PyOpenGL_accelerate
+pywin32
+pystray
+pyglet
+opencv-python
+opencv-python-headless
+numpy
