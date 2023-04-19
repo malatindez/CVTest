@@ -2,13 +2,24 @@ import win32gui
 import win32con
 import win32api
 import ctypes
-import moderngl
-import numpy as np
-from PIL import Image
 from ctypes import wintypes
+from OpenGL.GL import (
+    GL_COLOR_BUFFER_BIT, GL_DEPTH_BUFFER_BIT,
+    GL_TRIANGLES, GL_TRUE,
+    glBegin, glEnd, glClearColor, glClear, glColor3f, glVertex3f, glColorMask
+)
+from OpenGL.WGL import (
+    PIXELFORMATDESCRIPTOR, ChoosePixelFormat, SetPixelFormat, wglCreateContext, wglMakeCurrent, wglDeleteContext
+)
 user32 = ctypes.windll.user32
 kernel32 = ctypes.windll.kernel32
 gdi32 = ctypes.windll.gdi32
+
+PFD_DRAW_TO_WINDOW = 0x00000004
+PFD_SUPPORT_OPENGL = 0x00000020
+PFD_DOUBLEBUFFER = 0x00000001
+PFD_TYPE_RGBA = 0
+PFD_MAIN_PLANE = 0
 
 def create_window():
     # Define the window class
@@ -25,7 +36,7 @@ def create_window():
         win32con.WS_EX_LAYERED | win32con.WS_EX_TRANSPARENT | win32con.WS_EX_TOPMOST,
         wnd_class_atom,
         "Transparent Overlay",
-        win32con.WS_VISIBLE | win32con.WS_EX_TOPMOST,
+        win32con.WS_POPUP,
         0,
         0,
         win32api.GetSystemMetrics(win32con.SM_CXSCREEN),
@@ -36,72 +47,54 @@ def create_window():
         None
     )
 
-
-
     # Set the window's transparency
-    win32gui.SetLayeredWindowAttributes(hwnd, win32api.RGB(0, 0, 0), 128, win32con.LWA_ALPHA)
+    win32gui.SetLayeredWindowAttributes(hwnd, win32api.RGB(0, 0, 0), 180, win32con.LWA_ALPHA)
 
     return hwnd, wnd_class_atom
 
 def create_context(hwnd):
     hdc = win32gui.GetDC(hwnd)
+
+    pfd = PIXELFORMATDESCRIPTOR()
+    pfd.nSize = ctypes.sizeof(PIXELFORMATDESCRIPTOR)
+    pfd.nVersion = 1
+    pfd.dwFlags = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER
+    pfd.iPixelType = PFD_TYPE_RGBA
+    pfd.cColorBits = 32
+    pfd.cDepthBits = 24
+    pfd.cStencilBits = 8
+    pfd.iLayerType = PFD_MAIN_PLANE
+
+    pixel_format = ChoosePixelFormat(hdc, ctypes.byref(pfd))
+    SetPixelFormat(hdc, pixel_format, ctypes.byref(pfd))
+
     hglrc = wglCreateContext(hdc)
     wglMakeCurrent(hdc, hglrc)
-    ctx = moderngl.create_standalone_context()
-    return ctx, hdc, hglrc
 
-def wglCreateContext(hdc):
-    return ctypes.windll.opengl32.wglCreateContext(hdc)
+    return hdc, hglrc
 
-def wglMakeCurrent(hdc, hglrc):
-    return ctypes.windll.opengl32.wglMakeCurrent(hdc, hglrc)
+def draw_triangle():
+    glClearColor(0.0, 0.0, 0.0, 0.0)
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
 
-def create_vao(ctx):
-    prog = ctx.program(
-        vertex_shader="""
-        #version 330
-        in vec2 in_vert;
-        in vec3 in_color;
-        out vec3 color;
-        void main() {
-            gl_Position = vec4(in_vert, 0.0, 1.0);
-            color = in_color;
-        }
-        """,
-        fragment_shader="""
-        #version 330
-        in vec3 color;
-        out vec4 fragColor;
-        void main() {
-            fragColor = vec4(color, 1.0);
-        }
-        """
-    )
-    vertices = np.array([
-        -0.6, -0.6, 1.0, 0.0, 0.0,
-         0.6, -0.6, 0.0, 1.0, 0.0,
-         0.0,  0.6, 0.0, 0.0, 1.0,
-    ], dtype='f4')
-    vbo = ctx.buffer(vertices)
-    vao = ctx.simple_vertex_array(prog, vbo, 'in_vert', 'in_color')
-    return vao
-
-def draw(ctx, vao, hdc):
-    ctx.clear(0.0, 0.0, 0.0, 0.9)
-    vao.render(moderngl.TRIANGLES)
-    gdi32.SwapBuffers(hdc)
+    glBegin(GL_TRIANGLES)
+    glColor3f(1, 0, 0)
+    glVertex3f(-0.6, -0.6, 0)
+    glColor3f(0, 1, 0)
+    glVertex3f(0.6, -0.6, 0)
+    glColor3f(0, 0, 1)
+    glVertex3f(0, 0.6, 0)
+    glEnd()
 
 def main():
     hwnd, wnd_class_atom = create_window()
-    ctx, hdc, hglrc = create_context(hwnd)
+    hdc, hglrc = create_context(hwnd)
 
     # Show the window
-    user32.ShowWindow(hwnd, win32con.SW_SHOW)
-
-    vao = create_vao(ctx)
+    win32gui.ShowWindow(hwnd, win32con.SW_SHOW)
 
     # Message loop
-    msg = ctypes.wintypes.MSG()
+    msg = wintypes.MSG()
     running = True
     while running:
         while user32.PeekMessageW(ctypes.byref(msg), hwnd, 0, 0, win32con.PM_REMOVE) != 0:
@@ -115,12 +108,15 @@ def main():
             break
 
         # Draw the triangle
-        draw(ctx, vao, hdc)
+        draw_triangle()
+
+        # Swap buffers
+        gdi32.SwapBuffers(hdc)
 
     # Clean up
     win32gui.UnregisterClass(wnd_class_atom, None)
     wglMakeCurrent(None, None)
-    ctypes.windll.opengl32.wglDeleteContext(hglrc)
+    wglDeleteContext(hglrc)
     win32gui.ReleaseDC(hwnd, hdc)
 
 if __name__ == "__main__":
