@@ -2,7 +2,7 @@ import cv2
 import os
 
 import image_processors as ip
-from node import ImageReturnNode
+from node_ext import *
 from nodes import *
 import nodes
 
@@ -43,31 +43,6 @@ def setup_example_pipeline(input_image_path):
     return [output_node], [input_node, node1, node2, node3, node4, node5, node6, node7]
 
 
-def connect(node1, node2):
-    node1.add_output(node2)
-    node2.add_input(node1)
-
-
-def connect_nodes(nodes):
-    for i in range(len(nodes) - 1):
-        connect(nodes[i], nodes[i + 1])
-
-
-def add_input_output(node, input_nodes=None, output_nodes=None):
-    if not isinstance(input_nodes, list) and input_nodes is not None:
-        input_nodes = [input_nodes]
-    if not isinstance(output_nodes, list) and output_nodes is not None:
-        output_nodes = [output_nodes]
-    input_nodes = input_nodes or []
-    output_nodes = output_nodes or []
-    for input_node in input_nodes:
-        if input_node is not None:
-            connect(input_node, node)
-    for output_node in output_nodes:
-        if output_node is not None:
-            connect(node, output_node)
-
-
 def process_pipeline(output_nodes):
     node_outputs = []
     print(output_nodes)
@@ -99,6 +74,47 @@ def save_whole_pipeline(output_nodes, output_directory="output_images"):
                     cv2.imwrite(output_image_path, image)
                 except Exception as e:
                     print(f"Failed to save image {output_image_path}: {e}")
+
+def is_valid_graph(output_node, raise_exceptions = False):
+    def visit(node, visited, stack):
+        visited[node.id] = True
+        stack[node.id] = True
+
+        for input_node in node.inputs:
+            if not visited.get(input_node.id, False):
+                valid, error = visit(input_node, visited, stack)
+                if not valid:
+                    return False, error
+            elif stack.get(input_node.id, False):
+                msg = f"Cycle detected at node '{input_node.name}' (ID: {input_node.id})"
+                if raise_exceptions:
+                    raise Exception(msg)
+                return False, msg
+        input_amount = 0
+        ambiguous = False
+        for input_node in node.inputs:
+            if input_node.processor.output_amount != -1:
+                input_amount += input_node.processor.output_amount
+            else:
+                ambiguous = True
+        if ambiguous and input_amount > node.processor.input_amount and node.processor.input_amount != -1:
+            msg = f"Invalid input amount at node '{node.name}' (ID: {node.id}). Expected {node.processor.input_amount}, but found at least {input_amount} inputs."
+            if raise_exceptions:
+                raise Exception(msg)
+            return False, msg
+        if not ambiguous and input_amount != node.processor.input_amount and node.processor.input_amount != -1:
+            msg = f"Invalid input amount at node '{node.name}' (ID: {node.id}). Expected {node.processor.input_amount}, but found {input_amount} inputs."
+            if raise_exceptions:
+                raise Exception(msg)
+            return False, msg
+        stack[node.id] = False
+        return True, None
+
+    visited = {}
+    stack = {}
+
+    return visit(output_node, visited, stack)
+
 
 
 if __name__ == "__main__":

@@ -32,13 +32,18 @@ class Node:
             return self.cached_output
 
         input_images = [input_node.process() for input_node in self.inputs]
+        input_images = [list(i) if isinstance(i, tuple) else i for i in input_images]
         input_images = sum(input_images, [])
 
         if (isinstance(input_images, list) or isinstance(input_images, tuple)) and len(
             input_images
         ) == 1 and self.processor.input_amount == 1:
             input_images = input_images[0]
-
+        if (isinstance(input_images, list) or isinstance(input_images, tuple)) and len(
+            input_images
+        ) == 0 and self.processor.input_amount > 0:
+            assert False, "No input data"
+        
         if VERBOSE_OUTPUT:
             print(f"Processing {self.name}")
             if isinstance(input_images, list) or isinstance(input_images, tuple):
@@ -103,17 +108,3 @@ class Node:
         self.cached_output = None
         for input_node in self.inputs:
             input_node.reset_processing()
-
-
-class ImageReturnNode(Node):
-    def __init__(self, images):
-        self.images = images
-        super().__init__(
-            ip.ImageProcessor(function=self.process, input_amount=0, output_amount=1),
-            "ImageReturnNode",
-            inputs=None,
-        )
-
-    def process(self):
-        self.cached_output = self.images
-        return self.images

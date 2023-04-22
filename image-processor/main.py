@@ -14,7 +14,7 @@ frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 # Define the codec and create a VideoWriter object
 
 MAX_FRAME_AMOUNT = -1
-WRITE_IMAGES_DEBUG = False
+WRITE_IMAGES_DEBUG = True
 VERBOSE_OUTPUT = False
 
 
@@ -64,18 +64,18 @@ def setup_captures_recursively(output_node, suffix=0):
             )
             for i, image in enumerate(output_node.cached_output)
         ]
-        if(VERBOSE_OUTPUT):
+        if VERBOSE_OUTPUT:
             print(
-            [
-                (
-                    f"output_videos/Step_{suffix}_{output_node.name}_{i}.mp4",
-                    cv2.VideoWriter_fourcc(*"mp4v"),
-                    fps,
-                    (image.shape[1], image.shape[0]),
-                    image.shape[2] > 1 if len(image.shape) > 2 else False,
-                )
-                for i, image in enumerate(output_node.cached_output)
-            ]
+                [
+                    (
+                        f"output_videos/Step_{suffix}_{output_node.name}_{i}.mp4",
+                        cv2.VideoWriter_fourcc(*"mp4v"),
+                        fps,
+                        (image.shape[1], image.shape[0]),
+                        image.shape[2] > 1 if len(image.shape) > 2 else False,
+                    )
+                    for i, image in enumerate(output_node.cached_output)
+                ]
             )
         else:
             for i in range(len(output_node.cached_output)):
@@ -102,8 +102,15 @@ def release_captures_recursively(output_node):
 def save_frames_recursively(node):
     if node is None:
         return
-
     if hasattr(node, "should_be_captured") and node.should_be_captured:
+        if not hasattr(node, "_processed") or not hasattr(node, "captures"):
+            if (
+                not hasattr(node, "cached_output")
+                or node.cached_output is None
+                or len(node.cached_output) == 0
+            ):
+                return
+            setup_captures_recursively(node)
         if not node._processed:
             return
         if not hasattr(node, "frame"):
@@ -111,7 +118,7 @@ def save_frames_recursively(node):
         for i, image in enumerate(node.cached_output):
             if WRITE_IMAGES_DEBUG:
                 cv2.imwrite(
-                    "output_images/{}_{}.png".format(node.frame, node.name), image
+                    "output_images/{}_{}_{}.png".format(node.frame, node.name, i), image
                 )
             if len(node.captures) <= i:
                 continue
@@ -144,62 +151,137 @@ def get_filenames_recursively(node, suffix="0"):
 
 def pipeline(video, filename):
     input_node = graph.ImageReturnNode([])
-    resize_node = graph.nodes.Resize("Node #0 Resize", 1280, 720)
-    sobel = graph.nodes.SobelXY("Node #1 Sobel")
-    multiply = graph.nodes.MultiplyScalar("Node #1-1 Multiply", 8)
-    blur = graph.nodes.GaussianBlur("Node #1-2 Blur", (11, 11), 0)
+    resize_node = graph.nodes.Resize("Resize", 640, 480)
+    sobel = graph.nodes.SobelXY("Sobel")
+    multiply = graph.nodes.MultiplyScalar("Multiply", 8)
+    blur = graph.nodes.GaussianBlur("Blur", (15, 15), 0)
     erode = graph.nodes.Erode(
-        "Node #1-3 Erode",
+        "Erode",
         np.array([[0, 0, 1], [0, 1, 0], [1, 0, 0]], dtype=np.uint8),
         3,
     )
-    multiply2 = graph.nodes.MultiplyScalar("Node #1-4 Multiply", 8)
-    add = graph.nodes.AddImages("Node #1-5 AddImages", cv2.CV_8UC3)
-    add2 = graph.nodes.AddImages("Node #1-16 AddImages", cv2.CV_8UC3)
-    cvt_u8 = graph.nodes.Convert("Node #1-6 Convert to U8", np.uint8)
-    gray = graph.nodes.ColorspaceConversion("Node #1-7 Gray", cv2.COLOR_BGR2GRAY)
-    gray_eq = graph.nodes.HistogramEqualization("Node #1-8 Gray Equalization", False)
-    adjusted = graph.nodes.Brightness("Node #1-9 Adjusted", 10)
-    blur2 = graph.nodes.GaussianBlur("Node #1-10 Blur", (5, 5), 0)
-    canny = graph.nodes.Canny("Node #1-11 Canny", 10, 200)
+    cvt_hsv_bgr = graph.nodes.ColorspaceConversion("Convert to BGR", cv2.COLOR_HSV2BGR)
+    multiply2 = graph.nodes.MultiplyScalar("Multiply", 8)
+    add = graph.nodes.AddImages("AddImages", cv2.CV_8UC3)
+    add2 = graph.nodes.AddImages("AddImages", cv2.CV_8UC3)
+    cvt_u8 = graph.nodes.Convert("Convert to U8", np.uint8)
+    gray = graph.nodes.ColorspaceConversion("Gray", cv2.COLOR_BGR2GRAY)
+    gray_eq = graph.nodes.HistogramEqualization("Gray Equalization", False)
+    adjusted = graph.nodes.Brightness("Adjusted", 10)
+    as_float = graph.nodes.Convert("Convert to Float", np.float32)
+    as_uint8 = graph.nodes.Convert("Convert to U8", np.uint8)
+    adjusted2 = graph.nodes.Brightness("Adjusted", 5, -100)
+    adjusted3 = graph.nodes.Brightness("Adjusted", 1 / 5, 100)
+    blur2 = graph.nodes.GaussianBlur("Blur", (5, 5), 0)
+    canny = graph.nodes.Canny("Canny", 10, 200)
     dilate = graph.nodes.Dilate(
-        "Node #1-12 Dilation", cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5)), 1
+        "Dilation", cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5)), 1
     )
     erode2 = graph.nodes.Erode(
-        "Node #1-13 Erode", cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5)), 1
+        "Erode", cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5)), 1
     )
-    thresh = graph.nodes.Threshold("Node #1-14 Threshold", 80, 255, 0)
-    contours = graph.nodes.Contour("Node #1-15 Contours")
+    thresh = graph.nodes.Threshold("Threshold", 50, 255, 0)
+    contours = graph.nodes.Contour("Contours")
+    hough_lines = graph.nodes.HoughLines("Hough lines", 1, np.pi / 180, 50, 50, 10)
+    hough_lines_overlay = graph.nodes.HoughOverlayLine(
+        "Hough lines overlay", (0, 0, 255), 5
+    )
+    select_hue = graph.nodes.Select("select hue", 0)
+    select_sat = graph.nodes.Select("select sat", 1)
+    write_only_hue = graph.nodes.WriteGrayToSingleChannel("Write hue", 0)
+    write_only_sat = graph.nodes.WriteGrayToSingleChannel("Write sat", 1)
 
     conditional = graph.nodes.Conditional(
-        "Node #3 Draw Contours",
+        "Draw Contours",
         lambda images: all(
             i is not None and len(i) > 0 and len(i[0]) > 0 for i in images
         ),
-        graph.ip.DrawContours(),
+        graph.ip.DrawContours(thickness=2),
         graph.ip.ImageProcessor(
             function=lambda images: [images[0]], input_amount=1, output_amount=1
         ),
     )
+    write_only_val = graph.nodes.WriteGrayToSingleChannel("Write val", 2)
+    graph.connect_nodes([input_node, resize_node])
+    graph.connect_nodes([resize_node, graph.nodes.Clear("Clear"), write_only_val])
 
-    graph.connect_nodes(
+    def remove_rectangles(images):
+        image, edges = images
+        contours, _ = cv2.findContours(edges, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+        mask = np.zeros(image.shape, dtype=np.uint8)
+        # Loop over the contours
+        for contour in contours:
+            # Approximate the contour with a polygon
+            epsilon = 0.02 * cv2.arcLength(contour, True)
+            approx = cv2.approxPolyDP(contour, epsilon, True)
+            cv2.drawContours(mask, [approx], -1, 255, -1)
+        cv2.imshow("mask", mask)
+        cv2.waitKey(1)
+        return cv2.inpaint(image, mask, 3, cv2.INPAINT_TELEA)
+
+    cn1 = graph.connect_nodes(
         [
-            input_node,
             resize_node,
-            gray,
-            blur,
-            adjusted,
-            blur2,
-            canny,
-            dilate,
-            erode2,
-            thresh,
-            contours,
+            graph.nodes.ColorspaceConversion("Convert to HSV", cv2.COLOR_BGR2HSV),
+            graph.nodes.Split("split"),
+            graph.nodes.Select("select val", 2),
         ]
     )
-    graph.add_input_output(conditional, input_nodes=[resize_node, contours])
+    cn2 = graph.connect_nodes(
+        [
+            cn1[-1],
+            graph.nodes.GaussianBlur("Blur", (5, 5), 0),
+            graph.nodes.InRange("In range", (120), (255)),
+            graph.nodes.MorphologyProcessor(
+                "Morphology",
+                cv2.MORPH_OPEN,
+                cv2.getStructuringElement(cv2.MORPH_RECT, (10, 10)),
+            ),
+            graph.nodes.MorphologyProcessor(
+                "Morphology",
+                cv2.MORPH_CLOSE,
+                cv2.getStructuringElement(cv2.MORPH_RECT, (20, 20)),
+            ),
+            graph.nodes.Canny("Canny", 0, 255),
+        ]
+    )
+    n = graph.Node(
+            graph.ip.ImageProcessor(remove_rectangles, input_amount=2, output_amount=1),
+            "Remove Rectangles",
+        )
+    n.should_be_captured = True
+    graph.add_input_output(n,
+        input_nodes=[cn1[-1], cn2[-1]],
+        output_nodes=[write_only_val],
+    )
+    cn2[-1].should_be_captured = True
+    cn1[-1].should_be_captured = True
 
-    resize_node.should_be_captured = True
+    output1 = write_only_val
+
+    #    graph.connect_nodes(
+    #        [
+    #            input_node,
+    #            adjusted2,
+    #            resize_node,
+    #            gray,
+    #            blur,
+    #            adjusted,
+    #            blur2,
+    #            canny,
+    #            dilate,
+    #            erode2,
+    #            thresh
+    #        ]
+    #    )
+    #    graph.add_input_output(split, cvt_bgr_hsv, [select_hue, select_sat, select_val])
+    #    graph.add_input_output(clear, input_nodes=[resize_node])
+    #    graph.add_input_output(hough_lines_overlay, input_nodes=[clear, hough_lines])
+    #    graph.add_input_output(thresh, output_nodes=[contours, hough_lines])
+    #    graph.add_input_output(conditional, input_nodes=[resize_node, contours])
+    #    graph.add_input_output(add2, input_nodes=[conditional, hough_lines_overlay])
+
+    resize_node.should_be_captured = False
     blur.should_be_captured = True
     sobel.should_be_captured = True
     multiply.should_be_captured = True
@@ -208,15 +290,25 @@ def pipeline(video, filename):
     gray.should_be_captured = True
     gray_eq.should_be_captured = True
     adjusted.should_be_captured = True
+    as_float.should_be_captured = True
+    as_uint8.should_be_captured = True
+    adjusted2.should_be_captured = True
+    adjusted3.should_be_captured = True
     blur2.should_be_captured = True
     canny.should_be_captured = True
     dilate.should_be_captured = True
     erode2.should_be_captured = True
     thresh.should_be_captured = True
     conditional.should_be_captured = True
+    hough_lines_overlay.should_be_captured = True
     add2.should_be_captured = True
+    select_hue.should_be_captured = False
+    select_sat.should_be_captured = False
+    write_only_hue.should_be_captured = True
+    write_only_sat.should_be_captured = True
+    write_only_val.should_be_captured = True
 
-    output_node = conditional
+    output_nodes = [output1]
     captures_setuped = False
 
     print("Processing...")
@@ -238,33 +330,29 @@ def pipeline(video, filename):
         if not ret:
             break
         j = -1
-        output_node.reset_processing()
-        input_node.images = [frame]
-        output_node.process()
-        if captures_setuped:
-            save_frames_recursively(output_node)
-        else:
-            setup_captures_recursively(output_node)
-            save_frames_recursively(output_node)
-            captures_setuped = True
+        for node in output_nodes:
+            node.reset_processing()
+        for node in output_nodes:
+            input_node.images = [frame]
+            node.process()
+            if captures_setuped:
+                save_frames_recursively(node)
+            else:
+                setup_captures_recursively(node)
+                save_frames_recursively(node)
+                captures_setuped = True
 
-        combine_frames(output_node)
+            combine_frames(node)
 
-    release_captures_recursively(output_node)
+    for node in output_nodes:
+        release_captures_recursively(node)
     print("")
     print("Done!")
     print("Time taken: ", time() - x)
-    print_stats_recursive(output_node)
-    return get_filenames_recursively(output_node)
+    for node in output_nodes:
+        print_stats_recursive(node)
+    return sum([get_filenames_recursively(node) for node in output_nodes], [])
 
-
-def calculate_grid_size(num_videos):
-    # Calculate the number of rows and columns in the grid based on the number of input videos
-    num_rows = int(num_videos**0.5)
-    num_cols = num_videos // num_rows
-    if num_videos % num_rows != 0:
-        num_cols += 1
-    return num_rows, num_cols
 
 
 def recursive_image_gather(node):
@@ -280,6 +368,10 @@ def recursive_image_gather(node):
 
 def combine_frames(output_node):
     if not WRITE_IMAGES_DEBUG or output_node is None:
+        return
+    if not (
+        hasattr(output_node, "should_be_captured") and output_node.should_be_captured
+    ):
         return
     images = recursive_image_gather(output_node)
     images = images[::-1]
@@ -309,7 +401,6 @@ def combine_frames(output_node):
         if (i + 1) % num_cols == 0:  # If the end of a row is reached
             x_offset = 0  # Reset the x_offset
             y_offset += height  # Update the y_offset for the next row
-
     cv2.imwrite(
         "combined_images/{}_COMBINED.png".format(output_node.frame - 1), new_image
     )
