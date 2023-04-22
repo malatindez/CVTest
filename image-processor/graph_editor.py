@@ -72,7 +72,7 @@ class GraphEditor:
             visited[node.id] = True
             stack[node.id] = True
 
-            for input_node in node.inputs:
+            for input_node in node.inputs.values():
                 if not visited.get(input_node.id, False):
                     visit(input_node, visited, stack)
                 elif stack.get(input_node.id, False):
@@ -87,15 +87,15 @@ class GraphEditor:
                 for key, value in node.processor.function.input_information.items():
                     proxy_node.add_input(key + " (" + str(value) + ")")
             else:
-                for idx, child in enumerate(node.inputs):
+                for idx, child in enumerate(node.inputs.values()):
                     proxy_node.add_input(f"Input {idx}")
             if hasattr(node.processor.function, "output_information"):
                 for key, value in node.processor.function.output_information.items():
                     proxy_node.add_output(key + " (" + str(value) + ")")
             else:
                 proxy_node.add_output("Output")
-            
-            for idx, child in enumerate(node.inputs):
+
+            for idx, child in node.inputs.items():
                 child.proxy_ref.set_output(0, proxy_node.input(idx))
 
             stack[node.id] = False
@@ -106,11 +106,13 @@ class GraphEditor:
 
         return visit(output_node, visited, stack)
 
+
 def init_qt():
     global app
     signal.signal(signal.SIGINT, signal.SIG_DFL)
     QtCore.QCoreApplication.setAttribute(QtCore.Qt.AA_EnableHighDpiScaling)
     app = QApplication(sys.argv)
+
 
 if __name__ == "__main__":
     original_video = "original.mp4"
@@ -147,7 +149,7 @@ if __name__ == "__main__":
     output = write_only_val
 
     init_qt()
-    
+
     editor = GraphEditor(output)
 
     editor.run()

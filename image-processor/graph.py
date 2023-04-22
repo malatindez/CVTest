@@ -6,6 +6,7 @@ from node_ext import *
 from nodes import *
 import nodes
 
+
 def setup_example_pipeline(input_image_path):
     input_node = ImageReturnNode([cv2.imread(input_image_path)])
     node1 = nodes.GaussianBlur(
@@ -75,38 +76,51 @@ def save_whole_pipeline(output_nodes, output_directory="output_images"):
                 except Exception as e:
                     print(f"Failed to save image {output_image_path}: {e}")
 
-def is_valid_graph(output_node, raise_exceptions = False):
+
+def is_valid_graph(output_node, raise_exceptions=False):
     def visit(node, visited, stack):
         visited[node.id] = True
         stack[node.id] = True
 
-        for input_node in node.inputs:
+        for input_node in node.inputs.values():
             if not visited.get(input_node.id, False):
                 valid, error = visit(input_node, visited, stack)
                 if not valid:
                     return False, error
             elif stack.get(input_node.id, False):
-                msg = f"Cycle detected at node '{input_node.name}' (ID: {input_node.id})"
+                msg = (
+                    f"Cycle detected at node '{input_node.name}' (ID: {input_node.id})"
+                )
                 if raise_exceptions:
                     raise Exception(msg)
                 return False, msg
+
         input_amount = 0
         ambiguous = False
-        for input_node in node.inputs:
+        for input_node in node.inputs.values():
             if input_node.processor.output_amount != -1:
                 input_amount += input_node.processor.output_amount
             else:
                 ambiguous = True
-        if ambiguous and input_amount > node.processor.input_amount and node.processor.input_amount != -1:
+        if (
+            ambiguous
+            and input_amount > node.processor.input_amount
+            and node.processor.input_amount != -1
+        ):
             msg = f"Invalid input amount at node '{node.name}' (ID: {node.id}). Expected {node.processor.input_amount}, but found at least {input_amount} inputs."
             if raise_exceptions:
                 raise Exception(msg)
             return False, msg
-        if not ambiguous and input_amount != node.processor.input_amount and node.processor.input_amount != -1:
+        if (
+            not ambiguous
+            and input_amount != node.processor.input_amount
+            and node.processor.input_amount != -1
+        ):
             msg = f"Invalid input amount at node '{node.name}' (ID: {node.id}). Expected {node.processor.input_amount}, but found {input_amount} inputs."
             if raise_exceptions:
                 raise Exception(msg)
             return False, msg
+
         stack[node.id] = False
         return True, None
 
@@ -114,7 +128,6 @@ def is_valid_graph(output_node, raise_exceptions = False):
     stack = {}
 
     return visit(output_node, visited, stack)
-
 
 
 if __name__ == "__main__":

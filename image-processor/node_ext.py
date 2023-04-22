@@ -3,32 +3,18 @@ import cv2
 from typing import List, Tuple, Optional
 from functools import wraps
 
-
-def connect(node1, node2):
-    node1.add_output(node2)
-    node2.add_input(node1)
-
+def connect(node1, node2, output_index=0, input_index=0):
+    node1.add_output(output_index, node2)
+    node2.add_input(input_index, node1)
 
 def connect_nodes(nodes):
     for i in range(len(nodes) - 1):
         connect(nodes[i], nodes[i + 1])
     return nodes
 
-
-def add_input_output(node, input_nodes=None, output_nodes=None):
-    if not isinstance(input_nodes, list) and input_nodes is not None:
-        input_nodes = [input_nodes]
-    if not isinstance(output_nodes, list) and output_nodes is not None:
-        output_nodes = [output_nodes]
-    input_nodes = input_nodes or []
-    output_nodes = output_nodes or []
-    for input_node in input_nodes:
-        if input_node is not None:
-            connect(input_node, node)
-    for output_node in output_nodes:
-        if output_node is not None:
-            connect(node, output_node)
-
+def connect_multiple(data):
+    for output_node, output_index, input_node, input_index in data:
+        connect(output_node, input_node, output_index, input_index)
 
 def __user_input_information(**kwargs):
     def decorator(cls):
@@ -598,7 +584,7 @@ class CombinedNode(Node):
     def reset_processing(self):
         self._processed = False
         self.cached_output = None
-        for input_node in self.inputs:
+        for input_node in self.inputs.values():
             input_node.reset_processing()
         self.nodes[-1].reset_processing()
 

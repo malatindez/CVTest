@@ -91,28 +91,36 @@ write_only_val = Nodes.WriteGrayToSingleChannel("Write val", 2)
 
 graph.connect_nodes([resize_node, Nodes.Clear("Clear"), write_only_val])
 
-graph.add_input_output(
-    n,
-    input_nodes=[cn1[-1], cn2[-1]],
-    output_nodes=[write_only_val],
+graph.connect_multiple(
+    [
+        (cn1[-1], 0, n, 0),
+        (cn2[-1], 0, n, 1),
+        (n, 0, write_only_val, 1)
+    ]
 )
 output = GetWriteNode("Output")
-graph.add_input_output(output, input_nodes=[write_only_val])
+graph.connect_multiple(
+    [
+        (write_only_val, 0, output, 0),
+    ]
+)
 
 combine_node = Nodes.ImageCombineNode(9, (360, 480), (3,3))
-graph.add_input_output(combine_node, input_nodes=[
-    resize_node,
-    convert_to_hsv,
-    select_v_channel,
-    blur,
-    in_range,
-    morphology2,
-    canny,
-    write_only_val,
-    output
-])
+graph.connect_multiple(
+    [
+        (resize_node, 0, combine_node, 0),
+        (convert_to_hsv, 0, combine_node, 1),
+        (select_v_channel, 0, combine_node, 2),
+        (blur, 0, combine_node, 3),
+        (in_range, 0, combine_node, 4),
+        (morphology2, 0, combine_node, 5),
+        (canny, 0, combine_node, 6),
+        (write_only_val, 0, combine_node, 7),
+        (output, 0, combine_node, 8),
+    ]
+)
 last_node = GetWriteNode("Combine")
-last_node.add_input(combine_node)
+last_node.add_input(0, combine_node)
 
 valid, error = graph.is_valid_graph(output, True)
 if not valid:
