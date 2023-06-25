@@ -39,6 +39,7 @@ class ProxyNode(BaseNode):
                     except Exception as e:
                         print(e)
                         self.add_text_input("processor_" + key, key, str(value))
+        
 
     def set_property(self, name, value, push_undo=True):
         # convert value to correct type

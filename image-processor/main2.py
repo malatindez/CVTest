@@ -5,7 +5,7 @@ import graph
 import os
 from nodes import Nodes
 import graph_editor
-original_video = "original.mp4"
+original_video = "original2.mp4"
 MAX_FRAME_COUNT = -1
 WRITE_IMAGES_DEBUG = False
 WRITE_VIDEO_DEBUG = False
@@ -56,15 +56,11 @@ cn1 = graph.connect_nodes([
 
 blur = Nodes.GaussianBlur("Gaussian blur", (5, 5), 0)
 in_range = Nodes.InRange("In range", (50), (120))
-morphology = Nodes.MorphologyProcessor("Morphology", cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_RECT, (10, 10)))
-morphology2 = Nodes.MorphologyProcessor("Morphology", cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_RECT, (20, 20)))
 canny = Nodes.Canny("Canny", 100, 200)
 cn2 = graph.connect_nodes([
     cn1[-1],
     blur,
     in_range,
-    morphology,
-    morphology2,
     canny
 ])
 
@@ -105,18 +101,15 @@ graph.connect_multiple(
     ]
 )
 
-combine_node = Nodes.ImageCombineNode(9, (360, 480), (3,3))
+combine_node = Nodes.ImageCombineNode(6, (360, 480), (3,2))
 graph.connect_multiple(
     [
         (resize_node, 0, combine_node, 0),
         (convert_to_hsv, 0, combine_node, 1),
         (select_v_channel, 0, combine_node, 2),
-        (blur, 0, combine_node, 3),
-        (in_range, 0, combine_node, 4),
-        (morphology2, 0, combine_node, 5),
-        (canny, 0, combine_node, 6),
-        (write_only_val, 0, combine_node, 7),
-        (output, 0, combine_node, 8),
+        (cn1[-1], 0, combine_node, 3),
+        (cn2[-1], 0, combine_node, 4),
+        (write_only_val, 0, combine_node, 5),
     ]
 )
 last_node = GetWriteNode("Combine")
@@ -127,16 +120,21 @@ if not valid:
     print(error)
     exit(1)
 graph_editor.init_qt()
-editor = graph_editor.GraphEditor(output)
+editor = graph_editor.GraphEditor(last_node)
 
 editor.graph_widget.show()
 
 print("Processing...")
 x = time()
 MAX_FRAME_COUNT = video.get_frame_count() if MAX_FRAME_COUNT == -1 else MAX_FRAME_COUNT
+prev_frame = None
+
+video2 = graph.VideoReadNode(original_video)
+last_node.process()
+last_node.reset_processing()
+
+a = False
 while video.get_frame() != MAX_FRAME_COUNT:
-    #editor.graph_widget.update()
-    # calculate how much time is left
     elapsed = time() - x
     frame_num = video.get_frame()
     remaining = (MAX_FRAME_COUNT - frame_num) * elapsed / (frame_num + 1)
@@ -147,6 +145,8 @@ while video.get_frame() != MAX_FRAME_COUNT:
         end="\r",
         flush=True,
     )
+
     last_node.process()
+    
     last_node.reset_processing()
     cv2.waitKey(1)
